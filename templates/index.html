@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 图像生成</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, "Microsoft YaHei", sans-serif; background: #f0f2f5; min-height: 100vh; }
+        .container { max-width: 900px; margin: 0 auto; padding: 24px; }
+        h1 { text-align: center; margin-bottom: 24px; color: #1a1a2e; font-size: 28px; }
+
+        .card {
+            background: #fff; border-radius: 12px; padding: 24px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.08); margin-bottom: 24px;
+        }
+
+        label { display: block; font-weight: 600; margin-bottom: 6px; color: #333; font-size: 14px; }
+        textarea {
+            width: 100%; border: 1px solid #d9d9d9; border-radius: 8px;
+            padding: 12px; font-size: 15px; resize: vertical; min-height: 80px;
+            transition: border-color .2s;
+        }
+        textarea:focus { outline: none; border-color: #4361ee; }
+
+        .row { display: flex; gap: 16px; margin-top: 16px; flex-wrap: wrap; }
+        .row .field { flex: 1; min-width: 140px; }
+        select, input[type="number"] {
+            width: 100%; border: 1px solid #d9d9d9; border-radius: 8px;
+            padding: 8px 12px; font-size: 14px; background: #fff;
+        }
+
+        .upload-row { display: flex; gap: 16px; margin-top: 16px; }
+        .upload-area {
+            flex: 1; border: 2px dashed #d9d9d9; border-radius: 8px;
+            padding: 20px; text-align: center; cursor: pointer; transition: .2s;
+            color: #999; position: relative; min-height: 120px;
+        }
+        .upload-area:hover { border-color: #4361ee; color: #4361ee; }
+        .upload-area input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+        .upload-area .upload-label { font-weight: 600; color: #333; font-size: 14px; margin-bottom: 4px; }
+        .upload-area .upload-hint { font-size: 12px; color: #aaa; }
+        .upload-area .preview-row { display: flex; gap: 8px; justify-content: center; margin-top: 12px; flex-wrap: wrap; }
+        .upload-area .preview-row img { height: 80px; border-radius: 6px; object-fit: cover; }
+        #uploadAreaA { border-color: #4361ee44; }
+        #uploadAreaB { border-color: #e67e2244; }
+        #uploadAreaA:hover { border-color: #4361ee; }
+        #uploadAreaB:hover { border-color: #e67e22; }
+        .upload-tip { margin-top: 8px; font-size: 12px; color: #aaa; text-align: center; }
+
+        .btn {
+            display: block; width: 100%; margin-top: 20px; padding: 14px;
+            background: #4361ee; color: #fff; border: none; border-radius: 8px;
+            font-size: 16px; font-weight: 600; cursor: pointer; transition: .2s;
+        }
+        .btn:hover { background: #3a56d4; }
+        .btn:disabled { background: #a0a0a0; cursor: not-allowed; }
+
+        .result { margin-top: 24px; }
+        .dl-link {
+            display: inline-block; margin-top: 8px; padding: 6px 16px;
+            background: #4361ee; color: #fff; border-radius: 6px;
+            text-decoration: none; font-size: 13px;
+        }
+        .dl-link:hover { background: #3a56d4; }
+        .error { color: #e74c3c; margin-top: 12px; font-size: 14px; }
+        .spinner {
+            display: inline-block; width: 20px; height: 20px;
+            border: 3px solid rgba(255,255,255,.3); border-top-color: #fff;
+            border-radius: 50%; animation: spin .8s linear infinite;
+            vertical-align: middle; margin-right: 8px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>AI 图像生成</h1>
+    <div class="card">
+        <form id="genForm">
+            <label for="prompt">提示词</label>
+            <textarea id="prompt" name="prompt" placeholder="描述你想生成的图像，例如：一只在月球上弹吉他的猫"></textarea>
+
+            <div class="row">
+                <div class="field">
+                    <label for="model">模型</label>
+                    <select id="model" name="model">
+                        {% for m in models %}
+                        <option value="{{ m }}" {% if m == default_model %}selected{% endif %}>{{ m }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="field">
+                    <label for="size">尺寸</label>
+                    <select id="size" name="size">
+                        <option value="1024x1024">1024×1024</option>
+                        <option value="1024x1536">1024×1536 (竖版)</option>
+                        <option value="1536x1024">1536×1024 (横版)</option>
+                        <option value="auto">自动</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <label for="quality">质量</label>
+                    <select id="quality" name="quality">
+                        <option value="auto">自动</option>
+                        <option value="high">高</option>
+                        <option value="medium">中</option>
+                        <option value="low">低</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <label for="n">数量</label>
+                    <input type="number" id="n" name="n" value="1" min="1" max="4">
+                </div>
+            </div>
+
+            <div class="upload-row">
+                <div class="upload-area" id="uploadAreaA">
+                    <div class="upload-label">A - 模板图（风格/样式参考）</div>
+                    <div class="upload-hint">上传提供风格、构图、模板的图片</div>
+                    <input type="file" id="imageInputA" accept="image/*" multiple>
+                    <div class="preview-row" id="previewRowA"></div>
+                </div>
+                <div class="upload-area" id="uploadAreaB">
+                    <div class="upload-label">B - 目标图（要被修改的图）</div>
+                    <div class="upload-hint">上传需要被调整/修改的图片</div>
+                    <input type="file" id="imageInputB" accept="image/*" multiple>
+                    <div class="preview-row" id="previewRowB"></div>
+                </div>
+            </div>
+            <p class="upload-tip">只上传一侧也可以，两侧都不传则为纯文生图</p>
+
+            <button type="submit" class="btn" id="submitBtn">生成图像</button>
+        </form>
+
+        <div class="error" id="errorMsg"></div>
+    </div>
+
+    <div class="result" id="resultArea"></div>
+</div>
+
+<script>
+const form = document.getElementById('genForm');
+const imageInputA = document.getElementById('imageInputA');
+const imageInputB = document.getElementById('imageInputB');
+const previewRowA = document.getElementById('previewRowA');
+const previewRowB = document.getElementById('previewRowB');
+const submitBtn = document.getElementById('submitBtn');
+const errorMsg = document.getElementById('errorMsg');
+const resultArea = document.getElementById('resultArea');
+
+function bindPreview(input, row) {
+    input.addEventListener('change', () => {
+        row.innerHTML = '';
+        for (const file of input.files) {
+            const img = document.createElement('img');
+            img.src = URL.createObjectURL(file);
+            row.appendChild(img);
+        }
+    });
+}
+bindPreview(imageInputA, previewRowA);
+bindPreview(imageInputB, previewRowB);
+
+form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    errorMsg.textContent = '';
+
+    const prompt = document.getElementById('prompt').value.trim();
+    if (!prompt) { errorMsg.textContent = '请输入提示词'; return; }
+
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span class="spinner"></span>生成中，请稍候...';
+
+    const formData = new FormData();
+    formData.append('prompt', prompt);
+    formData.append('model', document.getElementById('model').value);
+    formData.append('size', document.getElementById('size').value);
+    formData.append('quality', document.getElementById('quality').value);
+    formData.append('n', document.getElementById('n').value);
+    for (const file of imageInputA.files) {
+        formData.append('images_a', file);
+    }
+    for (const file of imageInputB.files) {
+        formData.append('images_b', file);
+    }
+
+    try {
+        const resp = await fetch('/generate', { method: 'POST', body: formData });
+        const data = await resp.json();
+        if (data.error) {
+            errorMsg.textContent = data.error;
+        } else {
+            let html = '<div class="card"><h3 style="margin-bottom:12px">生成结果</h3>';
+            for (const src of data.images) {
+                const fname = src.split('/').pop();
+                html += `<div style="margin-bottom:16px"><img src="${src}" style="max-width:100%;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,0.12)"><br><a href="${src}" download="${fname}" class="dl-link">下载图片</a></div>`;
+            }
+            html += '</div>';
+            resultArea.innerHTML = html + resultArea.innerHTML;
+        }
+    } catch (err) {
+        errorMsg.textContent = '请求失败: ' + err.message;
+    }
+
+    submitBtn.disabled = false;
+    submitBtn.textContent = '生成图像';
+});
+</script>
+</body>
+</html>
